@@ -18,3 +18,13 @@ vendor:
 
 clean:
 	rm -rf ./vendor
+
+format:
+	go fmt ./...
+
+build:
+	go build ./...
+
+check: format lint test
+
+all: clean vendor format lint test

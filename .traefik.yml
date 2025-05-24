@@ -1,12 +1,15 @@
-displayName: Demo Plugin
+displayName: Cloudflare Access
 type: middleware
 iconPath: .assets/icon.png
 
-import: github.com/traefik/plugindemo
+import: github.com/hhftechnology/traefik-cloudflare-access
 
-summary: '[Demo] Add Request Header'
+summary: 'Middleware for Cloudflare Access authentication with JWT token verification'
 
 testData:
-  Headers:
-    X-Demo: test
-    X-URL: '{{URL}}'
+  teamDomain: "https://myteam.cloudflareaccess.com"
+  policyAUD: "4714c1358e65fe4b408ad6d432a5f878f08194bdb4752441fd56faefa9b2b6f2"
+  skipClientIDCheck: false
+  skipExpiryCheck: false
+  blockPageTitle: "Access Denied"
+  blockPageMessage: "You don't have permission to access this resource. Please authenticate through Cloudflare Access."

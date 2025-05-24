@@ -6,8 +6,11 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"           // This import was missing - needed for certificate operations
+	"crypto/x509/pkix"      // This import was missing - needed for certificate subject info
 	"encoding/base64"
 	"encoding/json"
+	"math/big"              // This import was missing - needed for certificate serial numbers
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -382,6 +385,47 @@ func createTestJWT(issuer, audience string, privateKey *rsa.PrivateKey) (string,
 	return signingString + "." + signatureEncoded, nil
 }
 
+func createMockCertificate(publicKey *rsa.PublicKey) (*x509.Certificate, error) {
+	// Create a certificate template
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization:  []string{"Test Organization"},
+			Country:       []string{"US"},
+			Province:      []string{""},
+			Locality:      []string{"Test City"},
+			StreetAddress: []string{""},
+			PostalCode:    []string{""},
+		},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
+		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  nil,
+	}
+
+	// Create a temporary private key for signing the certificate
+	// In a real scenario, this would be a CA's private key
+	tempPrivKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create the certificate
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey, tempPrivKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse the certificate
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		return nil, err
+	}
+
+	return cert, nil
+}
+
 func createMockJWKSServer(t *testing.T, publicKey *rsa.PublicKey) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/cdn-cgi/access/certs") {
@@ -389,9 +433,14 @@ func createMockJWKSServer(t *testing.T, publicKey *rsa.PublicKey) *httptest.Serv
 			return
 		}
 		
-		// Create a mock certificate for the public key
-		// In a real scenario, this would be a proper X.509 certificate
-		// For testing, we'll create a minimal response
+		// Create a proper mock X.509 certificate for testing
+		cert, err := createMockCertificate(publicKey)
+		if err != nil {
+			t.Fatalf("Failed to create mock certificate: %v", err)
+		}
+		
+		certB64 := base64.StdEncoding.EncodeToString(cert.Raw)
+		
 		jwks := map[string]interface{}{
 			"keys": []map[string]interface{}{
 				{
@@ -399,11 +448,7 @@ func createMockJWKSServer(t *testing.T, publicKey *rsa.PublicKey) *httptest.Serv
 					"kid": "test-key-id",
 					"kty": "RSA",
 					"use": "sig",
-					"x5c": []string{
-						// This would normally be a base64-encoded X.509 certificate
-						// For testing, we'll use a placeholder that the mock can handle
-						"LS0tLS1CRUdJTi==", // Base64 for "-----BEGIN"
-					},
+					"x5c": []string{certB64},
 					"n": base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes()),
 					"e": "AQAB", // 65537 in base64
 				},

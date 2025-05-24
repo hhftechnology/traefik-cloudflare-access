@@ -1,3 +1,4 @@
+
 package cloudflareaccess_test
 
 import (
@@ -17,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hhftechnology/traefik-cloudflare-access"
+	"github.com/hhftechnology/traefik-cloudflare-access"  // Make sure this matches your actual module name
 )
 
 func TestCloudflareAccessMissingToken(t *testing.T) {
@@ -52,7 +53,6 @@ func TestCloudflareAccessMissingToken(t *testing.T) {
 
 func TestCloudflareAccessValidTokenHeader(t *testing.T) {
 	// Given
-	teamDomain := "https://test.cloudflareaccess.com"
 	audience := "test-audience"
 	
 	// Create test RSA key pair
@@ -61,18 +61,21 @@ func TestCloudflareAccessValidTokenHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	
-	// Create JWT token
+	// Mock server for JWKS endpoint - create this FIRST
+	jwksServer := createMockJWKSServer(t, &privateKey.PublicKey)
+	defer jwksServer.Close()
+	
+	// Use the mock server URL as the team domain (keep it as HTTP for testing)
+	teamDomain := jwksServer.URL
+	
+	// Create JWT token with the mock server URL as issuer
 	token, err := createTestJWT(teamDomain, audience, privateKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	
-	// Mock server for JWKS endpoint
-	jwksServer := createMockJWKSServer(t, &privateKey.PublicKey)
-	defer jwksServer.Close()
-	
 	cfg := cloudflareaccess.CreateConfig()
-	cfg.TeamDomain = strings.Replace(jwksServer.URL, "http://", "https://", 1)
+	cfg.TeamDomain = teamDomain
 	cfg.PolicyAUD = audience
 	cfg.SkipClientIDCheck = false
 	cfg.SkipExpiryCheck = true // Skip expiry for test simplicity
@@ -103,7 +106,6 @@ func TestCloudflareAccessValidTokenHeader(t *testing.T) {
 
 func TestCloudflareAccessValidTokenCookie(t *testing.T) {
 	// Given
-	teamDomain := "https://test.cloudflareaccess.com"
 	audience := "test-audience"
 	
 	// Create test RSA key pair
@@ -112,18 +114,21 @@ func TestCloudflareAccessValidTokenCookie(t *testing.T) {
 		t.Fatal(err)
 	}
 	
-	// Create JWT token
+	// Mock server for JWKS endpoint - create this FIRST
+	jwksServer := createMockJWKSServer(t, &privateKey.PublicKey)
+	defer jwksServer.Close()
+	
+	// Use the mock server URL as the team domain (keep it as HTTP for testing)
+	teamDomain := jwksServer.URL
+	
+	// Create JWT token with the mock server URL as issuer
 	token, err := createTestJWT(teamDomain, audience, privateKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	
-	// Mock server for JWKS endpoint
-	jwksServer := createMockJWKSServer(t, &privateKey.PublicKey)
-	defer jwksServer.Close()
-	
 	cfg := cloudflareaccess.CreateConfig()
-	cfg.TeamDomain = strings.Replace(jwksServer.URL, "http://", "https://", 1)
+	cfg.TeamDomain = teamDomain
 	cfg.PolicyAUD = audience
 	cfg.SkipClientIDCheck = false
 	cfg.SkipExpiryCheck = true // Skip expiry for test simplicity

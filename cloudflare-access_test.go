@@ -1,4 +1,4 @@
-package cloudflareaccess_test
+package traefik_cloudflare_access_test
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 // Test 1: Basic functionality - missing token should return 401
 func TestCloudflareAccessMissingToken(t *testing.T) {
 	// Given: A properly configured plugin
-	cfg := cloudflareaccess.CreateConfig()
+	cfg := traefik_cloudflare_access.CreateConfig()
 	cfg.TeamDomain = "https://test.cloudflareaccess.com"
 	cfg.PolicyAUD = "test-audience"
 	
@@ -24,7 +24,7 @@ func TestCloudflareAccessMissingToken(t *testing.T) {
 		rw.Write([]byte("success"))
 	})
 
-	handler, err := cloudflareaccess.New(ctx, next, cfg, "cloudflare-access-plugin")
+	handler, err := traefik_cloudflare_access.New(ctx, next, cfg, "cloudflare-access-plugin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestCloudflareAccessMissingToken(t *testing.T) {
 // Test 2: Token extraction from header
 func TestCloudflareAccessTokenExtractionFromHeader(t *testing.T) {
 	// Given: A plugin that skips actual JWT verification for testing
-	cfg := cloudflareaccess.CreateConfig()
+	cfg := traefik_cloudflare_access.CreateConfig()
 	cfg.TeamDomain = "https://test.cloudflareaccess.com"
 	cfg.PolicyAUD = "test-audience"
 	cfg.SkipClientIDCheck = true
@@ -64,7 +64,7 @@ func TestCloudflareAccessTokenExtractionFromHeader(t *testing.T) {
 		rw.Write([]byte("success"))
 	})
 
-	handler, err := cloudflareaccess.New(ctx, next, cfg, "cloudflare-access-plugin")
+	handler, err := traefik_cloudflare_access.New(ctx, next, cfg, "cloudflare-access-plugin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestCloudflareAccessTokenExtractionFromHeader(t *testing.T) {
 // Test 3: Token extraction from cookie
 func TestCloudflareAccessTokenExtractionFromCookie(t *testing.T) {
 	// Given: A plugin that skips actual JWT verification for testing
-	cfg := cloudflareaccess.CreateConfig()
+	cfg := traefik_cloudflare_access.CreateConfig()
 	cfg.TeamDomain = "https://test.cloudflareaccess.com"
 	cfg.PolicyAUD = "test-audience"
 	cfg.SkipClientIDCheck = true
@@ -109,7 +109,7 @@ func TestCloudflareAccessTokenExtractionFromCookie(t *testing.T) {
 		rw.Write([]byte("success"))
 	})
 
-	handler, err := cloudflareaccess.New(ctx, next, cfg, "cloudflare-access-plugin")
+	handler, err := traefik_cloudflare_access.New(ctx, next, cfg, "cloudflare-access-plugin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,26 +147,26 @@ func TestCloudflareAccessConfigValidation(t *testing.T) {
 	next := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {})
 
 	// Test missing team domain
-	cfg1 := cloudflareaccess.CreateConfig()
+	cfg1 := traefik_cloudflare_access.CreateConfig()
 	cfg1.PolicyAUD = "test-audience"
-	_, err := cloudflareaccess.New(ctx, next, cfg1, "test")
+	_, err := traefik_cloudflare_access.New(ctx, next, cfg1, "test")
 	if err == nil {
 		t.Error("Expected error for missing team domain")
 	}
 
 	// Test missing policy AUD
-	cfg2 := cloudflareaccess.CreateConfig()
+	cfg2 := traefik_cloudflare_access.CreateConfig()
 	cfg2.TeamDomain = "https://test.cloudflareaccess.com"
-	_, err = cloudflareaccess.New(ctx, next, cfg2, "test")
+	_, err = traefik_cloudflare_access.New(ctx, next, cfg2, "test")
 	if err == nil {
 		t.Error("Expected error for missing policy AUD")
 	}
 
 	// Test valid configuration
-	cfg3 := cloudflareaccess.CreateConfig()
+	cfg3 := traefik_cloudflare_access.CreateConfig()
 	cfg3.TeamDomain = "https://test.cloudflareaccess.com"
 	cfg3.PolicyAUD = "test-audience"
-	_, err = cloudflareaccess.New(ctx, next, cfg3, "test")
+	_, err = traefik_cloudflare_access.New(ctx, next, cfg3, "test")
 	if err != nil {
 		t.Errorf("Expected no error for valid configuration, got: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestCloudflareAccessConfigValidation(t *testing.T) {
 // Test 5: Custom block page content
 func TestCloudflareAccessCustomBlockPage(t *testing.T) {
 	// Given: A plugin with custom block page configuration
-	cfg := cloudflareaccess.CreateConfig()
+	cfg := traefik_cloudflare_access.CreateConfig()
 	cfg.TeamDomain = "https://test.cloudflareaccess.com"
 	cfg.PolicyAUD = "test-audience"
 	cfg.BlockPageTitle = "Custom Access Denied"
@@ -186,7 +186,7 @@ func TestCloudflareAccessCustomBlockPage(t *testing.T) {
 		rw.WriteHeader(http.StatusOK)
 	})
 
-	handler, err := cloudflareaccess.New(ctx, next, cfg, "cloudflare-access-plugin")
+	handler, err := traefik_cloudflare_access.New(ctx, next, cfg, "cloudflare-access-plugin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,11 +217,11 @@ func TestCloudflareAccessTeamDomainNormalization(t *testing.T) {
 	next := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {})
 
 	// Test domain without https:// prefix gets normalized
-	cfg1 := cloudflareaccess.CreateConfig()
+	cfg1 := traefik_cloudflare_access.CreateConfig()
 	cfg1.TeamDomain = "myteam.cloudflareaccess.com"
 	cfg1.PolicyAUD = "test-audience"
 	
-	handler1, err := cloudflareaccess.New(ctx, next, cfg1, "test")
+	handler1, err := traefik_cloudflare_access.New(ctx, next, cfg1, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,11 +232,11 @@ func TestCloudflareAccessTeamDomainNormalization(t *testing.T) {
 	}
 
 	// Test domain without .cloudflareaccess.com suffix gets normalized
-	cfg2 := cloudflareaccess.CreateConfig()
+	cfg2 := traefik_cloudflare_access.CreateConfig()
 	cfg2.TeamDomain = "https://myteam"
 	cfg2.PolicyAUD = "test-audience"
 	
-	handler2, err := cloudflareaccess.New(ctx, next, cfg2, "test")
+	handler2, err := traefik_cloudflare_access.New(ctx, next, cfg2, "test")
 	if err != nil {
 		t.Fatal(err)
 	}

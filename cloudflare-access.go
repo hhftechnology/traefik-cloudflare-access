@@ -1,5 +1,5 @@
 // Package cloudflareaccess provides Cloudflare Access authentication middleware for Traefik.
-package cloudflareaccess
+package traefik_cloudflare_access
 
 import (
 	"context"

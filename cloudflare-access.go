@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -33,6 +34,12 @@ type Config struct {
 	
 	// BlockPageMessage is the message shown on the block page
 	BlockPageMessage string `json:"blockPageMessage,omitempty"`
+	
+	// UseRedirect determines whether to redirect to Cloudflare Access login instead of showing block page
+	UseRedirect bool `json:"useRedirect,omitempty"`
+	
+	// AuthDomain is the authentication domain for redirects (defaults to TeamDomain)
+	AuthDomain string `json:"authDomain,omitempty"`
 }
 
 // CreateConfig creates the default plugin configuration.
@@ -44,6 +51,8 @@ func CreateConfig() *Config {
 		SkipExpiryCheck:   false,
 		BlockPageTitle:    "Access Denied",
 		BlockPageMessage:  "You don't have permission to access this resource. Please authenticate through Cloudflare Access.",
+		UseRedirect:       true, // Default to redirect behavior for seamless experience
+		AuthDomain:        "",   // Will default to TeamDomain
 	}
 }
 
@@ -100,13 +109,18 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		return nil, fmt.Errorf("policyAUD is required")
 	}
 	
-	// Ensure team domain has proper format
+	// Normalize team domain format
 	if !strings.HasPrefix(config.TeamDomain, "https://") {
 		config.TeamDomain = "https://" + config.TeamDomain
 	}
 	
 	if !strings.HasSuffix(config.TeamDomain, ".cloudflareaccess.com") && !strings.Contains(config.TeamDomain, ".cloudflareaccess.com") {
 		config.TeamDomain = config.TeamDomain + ".cloudflareaccess.com"
+	}
+	
+	// Set default auth domain if not specified
+	if config.AuthDomain == "" {
+		config.AuthDomain = config.TeamDomain
 	}
 
 	return &CloudflareAccess{
@@ -121,19 +135,69 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 func (ca *CloudflareAccess) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// Extract JWT token from header or cookie
 	accessJWT := ca.extractToken(req)
+	
+	// If no token found, handle based on configuration
 	if accessJWT == "" {
-		ca.renderBlockPage(rw, "No authentication token found")
+		ca.handleNoToken(rw, req, "No authentication token found")
 		return
 	}
 
 	// Verify the JWT token
 	if err := ca.verifyToken(req.Context(), accessJWT); err != nil {
-		ca.renderBlockPage(rw, fmt.Sprintf("Authentication failed: %s", err.Error()))
+		ca.handleAuthFailure(rw, req, fmt.Sprintf("Authentication failed: %s", err.Error()))
 		return
 	}
 
 	// Token is valid, proceed to next handler
 	ca.next.ServeHTTP(rw, req)
+}
+
+// handleNoToken handles the case when no authentication token is found
+func (ca *CloudflareAccess) handleNoToken(rw http.ResponseWriter, req *http.Request, reason string) {
+	if ca.config.UseRedirect {
+		ca.redirectToAuth(rw, req)
+	} else {
+		ca.renderBlockPage(rw, reason)
+	}
+}
+
+// handleAuthFailure handles authentication failures (invalid tokens)
+func (ca *CloudflareAccess) handleAuthFailure(rw http.ResponseWriter, req *http.Request, reason string) {
+	if ca.config.UseRedirect {
+		// For auth failures, we still redirect to allow re-authentication
+		ca.redirectToAuth(rw, req)
+	} else {
+		ca.renderBlockPage(rw, reason)
+	}
+}
+
+// redirectToAuth redirects the user to Cloudflare Access authentication
+func (ca *CloudflareAccess) redirectToAuth(rw http.ResponseWriter, req *http.Request) {
+	// Build the current URL that the user was trying to access
+	scheme := "https"
+	if req.TLS == nil {
+		// Check if behind a proxy that terminates TLS
+		if proto := req.Header.Get("X-Forwarded-Proto"); proto != "" {
+			scheme = proto
+		} else if req.Header.Get("X-Forwarded-Ssl") == "on" {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+	}
+	
+	currentURL := fmt.Sprintf("%s://%s%s", scheme, req.Host, req.RequestURI)
+	
+	// Build the Cloudflare Access authentication URL
+	authURL := fmt.Sprintf("%s/cdn-cgi/access/login/%s", ca.config.AuthDomain, url.QueryEscape(currentURL))
+	
+	// Set cache headers to prevent caching of the redirect
+	rw.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	rw.Header().Set("Pragma", "no-cache")
+	rw.Header().Set("Expires", "0")
+	
+	// Perform the redirect
+	http.Redirect(rw, req, authURL, http.StatusTemporaryRedirect)
 }
 
 // extractToken extracts the JWT token from the request header or cookie.
@@ -332,6 +396,9 @@ func (ca *CloudflareAccess) verifySignature(token string, signature []byte, publ
 // renderBlockPage renders an HTML block page for unauthorized access.
 func (ca *CloudflareAccess) renderBlockPage(rw http.ResponseWriter, reason string) {
 	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+	rw.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	rw.Header().Set("Pragma", "no-cache")
+	rw.Header().Set("Expires", "0")
 	rw.WriteHeader(http.StatusUnauthorized)
 
 	blockPageHTML := fmt.Sprintf(`<!DOCTYPE html>
@@ -385,6 +452,22 @@ func (ca *CloudflareAccess) renderBlockPage(rw http.ResponseWriter, reason strin
             font-size: 14px;
             color: #2c3e50;
         }
+        .auth-button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin: 20px 0;
+            transition: background 0.3s;
+        }
+        .auth-button:hover {
+            background: #2980b9;
+        }
         .footer {
             margin-top: 30px;
             color: #95a5a6;
@@ -398,12 +481,13 @@ func (ca *CloudflareAccess) renderBlockPage(rw http.ResponseWriter, reason strin
         <h1>%s</h1>
         <p>%s</p>
         <div class="reason">%s</div>
+        <a href="%s/cdn-cgi/access/login" class="auth-button">Authenticate with Cloudflare Access</a>
         <div class="footer">
             Protected by Cloudflare Access
         </div>
     </div>
 </body>
-</html>`, ca.config.BlockPageTitle, ca.config.BlockPageTitle, ca.config.BlockPageMessage, reason)
+</html>`, ca.config.BlockPageTitle, ca.config.BlockPageTitle, ca.config.BlockPageMessage, reason, ca.config.AuthDomain)
 
 	rw.Write([]byte(blockPageHTML))
 }
